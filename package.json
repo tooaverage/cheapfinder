@@ -1,0 +1,16 @@
+{
+  "name": "cheapfinder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser extension + bookmarklet that spots likely drop-shipped products and finds cheaper prices on Amazon, eBay, AliExpress, Temu and more.",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "build:bookmarklet": "node tools/build-bookmarklet.mjs",
+    "e2e": "npm run build:bookmarklet && node test/e2e/run.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "playwright": "^1.62.0"
+  }
+}

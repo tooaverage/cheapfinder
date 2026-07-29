@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "CheapFinder",
+  "version": "0.1.0",
+  "description": "Spots likely drop-shipped products and shows where the same item is cheaper (Amazon, eBay, AliExpress, Temu, Google Lens).",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://www.ebay.com/*",
+    "https://rdap.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": [
+        "*://*.google.com/*",
+        "*://*.amazon.com/*",
+        "*://*.ebay.com/*",
+        "*://*.aliexpress.com/*",
+        "*://*.temu.com/*",
+        "*://*.walmart.com/*",
+        "*://*.paypal.com/*",
+        "*://*.stripe.com/*"
+      ],
+      "js": [
+        "shared/extract.js",
+        "shared/heuristics.js",
+        "shared/sites.js",
+        "shared/ui.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "CheapFinder settings"
+  }
+}
