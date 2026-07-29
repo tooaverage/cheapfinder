@@ -7,9 +7,10 @@ importScripts("shared/sites.js");
 
 var CF = globalThis.CheapFinder;
 var FETCH_TIMEOUT_MS = 9000;
-// titleSimilarity is query-token coverage; a real match for the same
-// product should cover at least half the query.
-var MIN_SIMILARITY = 0.5;
+// titleSimilarity is query-token coverage. 0.4 keeps genuine retitles of
+// the same product (brand token often missing from third-party listings)
+// while still rejecting short accessory titles like "iphone 15 case".
+var MIN_SIMILARITY = 0.4;
 var MAX_RESULTS = 3;
 
 function timeoutSignal(ms) {
@@ -30,7 +31,12 @@ function fetchText(url) {
   });
 }
 
-var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'", "#x27": "'", "#34": '"' };
+var ENTITIES = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  euro: "€", pound: "£", yen: "¥", cent: "¢", copy: "©", reg: "®", trade: "™",
+  rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', ndash: "-", mdash: "-",
+  hellip: "…", deg: "°", frac12: "½", "#39": "'", "#x27": "'", "#34": '"'
+};
 function decodeEntities(s) {
   return String(s || "").replace(/&(#?x?[0-9a-z]+);/gi, function (m, code) {
     if (ENTITIES[code.toLowerCase()]) return ENTITIES[code.toLowerCase()];

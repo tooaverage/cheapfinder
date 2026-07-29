@@ -16,15 +16,20 @@
       .split(/\s+/)
       .map(function (t) {
         // Strip leading/trailing punctuation so "Shipping!" is recognized
-        // as the noise word "shipping".
-        return t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "");
+        // as the noise word "shipping". \p{L}/\p{N} keep non-ASCII letters
+        // (Japanese titles, accented brands) intact.
+        return t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
       })
       .filter(function (t) {
         return t && NOISE_WORDS.indexOf(t.toLowerCase()) === -1;
       });
     var q = tokens.slice(0, 8).join(" ").trim();
-    if (product && product.brand && q.toLowerCase().indexOf(product.brand.toLowerCase()) === -1) {
-      q = product.brand + " " + q;
+    if (product && product.brand) {
+      // Token-boundary check so brand "LE" isn't "found" inside "LEather".
+      var esc = product.brand.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (!new RegExp("(^|[^a-z0-9])" + esc + "([^a-z0-9]|$)").test(q.toLowerCase())) {
+        q = product.brand + " " + q;
+      }
     }
     return q.slice(0, 120).trim() || title.slice(0, 120).trim();
   };

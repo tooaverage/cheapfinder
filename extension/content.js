@@ -44,13 +44,14 @@
       mounted.setLive(siteId, r && r.status === "done" ? r : { status: "error" });
     });
     // Highlight the cheapest live match that beats the page price — but
-    // only when the page price is USD (or unknown currency): live results
-    // come from amazon.com/ebay.com and are dollar-priced, so comparing
-    // against ¥ or zł amounts would be nonsense.
+    // only when the page price is confidently USD: live results come from
+    // amazon.com/ebay.com and are dollar-priced, so comparing against ¥,
+    // zł, or an amount whose currency we couldn't detect would be nonsense.
+    // (With no page price at all, highlighting the cheapest find is fine.)
     var pagePrice = product.price;
     var pageCurrency = pagePrice && pagePrice.currency;
-    if (pageCurrency && pageCurrency !== "USD") return;
     var pageAmount = pagePrice && pagePrice.amount;
+    if (pageAmount != null && pageCurrency !== "USD") return;
     var bestSite = null, bestAmount = Infinity;
     ["amazon", "ebay"].forEach(function (siteId) {
       var r = resp && resp[siteId];

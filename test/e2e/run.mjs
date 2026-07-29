@@ -83,7 +83,7 @@ try {
 
   const links = await page.evaluate(() => {
     const h = document.querySelector("[data-cheapfinder]");
-    return h ? [...h.shadowRoot.querySelectorAll("a")].map((a) => a.href) : [];
+    return h && h.shadowRoot ? [...h.shadowRoot.querySelectorAll("a")].map((a) => a.href) : [];
   });
   check("has AliExpress link", links.some((l) => l.includes("aliexpress.com")), JSON.stringify(links));
   check("has Temu link", links.some((l) => l.includes("temu.com")));
@@ -130,7 +130,9 @@ try {
   const installHtml = readFileSync(join(root, "bookmarklet/install.html"), "utf8");
   const hrefMatch = installHtml.match(/href="javascript:([^"]+)"/);
   check("install.html contains bookmarklet href", !!hrefMatch);
-  const bundle = decodeURIComponent(hrefMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  const bundle = hrefMatch
+    ? decodeURIComponent(hrefMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"))
+    : "";
   await page3.evaluate(bundle).catch((e) => console.log("# bundle eval error:", String(e).slice(0, 400)));
   const bmText = await page3.evaluate(() => {
     const hosts = document.querySelectorAll("[data-cheapfinder]");

@@ -50,7 +50,9 @@
 
   // Delivery ranges only count near shipping-related words, so "refunds are
   // processed in 7-14 days" in a returns policy doesn't fire.
-  var SHIPPING_RANGE = /(?:shipping|delivery|deliver(?:y|ed)?|arriv\w+|dispatch\w*|transit)[^.!?]{0,80}?(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*|working\s*)?days/;
+  // The gap must not cross into returns/refund/warranty talk, so "free
+  // shipping on all orders, returns accepted within 14-30 days" won't fire.
+  var SHIPPING_RANGE = /(?:shipping|delivery|deliver(?:y|ed)?|arriv\w+|dispatch\w*|transit)(?:(?!return|refund|warrant)[^.!?]){0,80}?(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*|working\s*)?days/;
 
   /* domainAgeMonths comes from the background RDAP lookup and may be null. */
   CF.assessDropship = function (doc, opts) {

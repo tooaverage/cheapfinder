@@ -71,6 +71,18 @@ test("search query drops noise words and caps length", () => {
   assert.ok(q.split(" ").length <= 8);
 });
 
+test("search query keeps non-ASCII titles and brands intact", () => {
+  const { CF } = loadCF("<html></html>");
+  const jp = CF.buildSearchQuery({ title: "ワイヤレスイヤホン Bluetooth 5.3 完全ワイヤレス", brand: null });
+  assert.ok(jp.includes("ワイヤレスイヤホン"), jp);
+  const fr = CF.buildSearchQuery({ title: "Étui de téléphone en cuir véritable", brand: null });
+  assert.ok(fr.startsWith("Étui"), fr);
+  // Brand containment is token-boundary aware: "Café" is already in the
+  // query and must not be prepended again.
+  const cafe = CF.buildSearchQuery({ title: "Café Crème Espresso Machine", brand: "Café" });
+  assert.ok(!/Café.*Café/.test(cafe), cafe);
+});
+
 test("titleSimilarity behaves", () => {
   const { CF } = loadCF("<html></html>");
   const a = "Ultra Portable Neck Fan 4000mAh Bladeless";
@@ -113,6 +125,7 @@ test("legit-shop phrasings do not trip signals", () => {
     <h1>Linen Shirt</h1>
     <p>Only 3 left in stock - order soon.</p>
     <p>Refunds are processed in 7-14 days after we receive the item.</p>
+    <p>Free shipping on all orders, returns accepted within 14-30 days.</p>
     </body></html>`;
   const { CF, document } = loadCF(html);
   const a = CF.assessDropship(document, {});
