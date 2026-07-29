@@ -7,11 +7,13 @@ importScripts("shared/sites.js");
 
 var CF = globalThis.CheapFinder;
 var FETCH_TIMEOUT_MS = 9000;
-var MIN_SIMILARITY = 0.3;
+// titleSimilarity is query-token coverage; a real match for the same
+// product should cover at least half the query.
+var MIN_SIMILARITY = 0.5;
 var MAX_RESULTS = 3;
 
 function timeoutSignal(ms) {
-  if (AbortSignal && AbortSignal.timeout) return AbortSignal.timeout(ms);
+  if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) return AbortSignal.timeout(ms);
   var c = new AbortController();
   setTimeout(function () { c.abort(); }, ms);
   return c.signal;
@@ -90,12 +92,16 @@ function parseEbay(html) {
   var chunks = html.split(/class="s-item(?:__wrapper|\s|")/).slice(1);
   for (var i = 0; i < chunks.length; i++) {
     var chunk = chunks[i].slice(0, 30000);
-    var titleMatch = chunk.match(/class="s-item__title"[^>]*>(?:\s*<[^>]+>)*([^<]{5,400})</);
+    // Take the whole title block and strip tags: the first text run can be
+    // a "New Listing" badge span, not the title itself.
+    var titleMatch = chunk.match(/class="s-item__title"[^>]*>([\s\S]{0,600}?)<\/(?:div|h3|span)>\s*<\/(?:div|h3|a)/) ||
+      chunk.match(/class="s-item__title"[^>]*>([\s\S]{0,600}?)<\/(?:div|h3)>/);
     var priceMatch = chunk.match(/class="s-item__price"[^>]*>(?:\s*<[^>]+>)*([^<]{1,40})</);
     var urlMatch = chunk.match(/href="(https:\/\/www\.ebay\.com\/itm\/[^"]+)"/);
     if (!titleMatch || !priceMatch) continue;
-    var title = decodeEntities(titleMatch[1]);
-    if (/shop on ebay/i.test(title)) continue; // placeholder card
+    var title = decodeEntities(titleMatch[1].replace(/<[^>]+>/g, " "))
+      .replace(/^new listing\s*/i, "").trim();
+    if (title.length < 5 || /shop on ebay/i.test(title)) continue; // placeholder card
     var raw = decodeEntities(priceMatch[1]);
     items.push({
       title: title,
@@ -107,7 +113,10 @@ function parseEbay(html) {
   return items;
 }
 
-/* Minimal registrable-domain guess for RDAP (handles common two-part TLDs). */
+/* Minimal registrable-domain guess for RDAP (handles common two-part TLDs).
+ * Not a Public Suffix List: hosts like foo.github.io resolve to github.io,
+ * so the young-domain signal simply never fires for such shops — an
+ * accepted false-negative. */
 var TWO_PART_TLDS = ["co.uk", "org.uk", "ac.uk", "com.au", "net.au", "org.au", "co.nz", "co.jp", "com.br", "com.mx", "co.in", "com.sg", "com.hk", "co.kr", "com.tw", "com.cn"];
 function registrableDomain(host) {
   var h = String(host || "").toLowerCase().replace(/\.$/, "");
@@ -118,6 +127,9 @@ function registrableDomain(host) {
   return lastTwo;
 }
 
+/* rdap.org is a redirector to the registry's own RDAP server; the final
+ * host isn't in host_permissions, so this relies on registries sending
+ * CORS headers per RFC 7480 (most do). Failures degrade to null. */
 function fetchDomainAgeMonths(host) {
   var domain = registrableDomain(host);
   if (!domain || domain.indexOf(".") === -1) return Promise.resolve(null);

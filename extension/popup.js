@@ -1,6 +1,7 @@
-var DEFAULTS = { enabled: true, autoOpen: true, disabledHosts: [] };
+var DEFAULTS = { enabled: true, autoOpen: true, livePrices: true, disabledHosts: [] };
 var enabledEl = document.getElementById("enabled");
 var autoOpenEl = document.getElementById("autoOpen");
+var livePricesEl = document.getElementById("livePrices");
 var hostEl = document.getElementById("host");
 var toggleHostBtn = document.getElementById("toggleHost");
 var currentHost = null;
@@ -8,6 +9,7 @@ var currentHost = null;
 function render(settings) {
   enabledEl.checked = !!settings.enabled;
   autoOpenEl.checked = !!settings.autoOpen;
+  livePricesEl.checked = !!settings.livePrices;
   var disabled = settings.disabledHosts || [];
   if (currentHost) {
     hostEl.textContent = currentHost;
@@ -34,6 +36,9 @@ enabledEl.addEventListener("change", function () {
 });
 autoOpenEl.addEventListener("change", function () {
   chrome.storage.sync.set({ autoOpen: autoOpenEl.checked });
+});
+livePricesEl.addEventListener("change", function () {
+  chrome.storage.sync.set({ livePrices: livePricesEl.checked });
 });
 toggleHostBtn.addEventListener("click", function () {
   if (!currentHost) return;

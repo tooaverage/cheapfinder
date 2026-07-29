@@ -9,8 +9,12 @@
     "e2e": "npm run build:bookmarklet && node test/e2e/run.mjs"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
     "jsdom": "^30.0.1",
-    "playwright": "^1.62.0"
+    "playwright": "^1.62.0",
+    "terser": "^5.49.0"
   }
 }

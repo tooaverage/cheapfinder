@@ -1,15 +1,17 @@
 /* CheapFinder — drop-shipping signal scoring.
  * Every check is a heuristic; the panel presents them as signals, never
- * as proof. Scores are additive and capped at MAX_SCORE. */
+ * as proof. Scores are additive and capped at MAX_SCORE. Signals are
+ * deliberately conservative: apps like Loox/AfterShip that plenty of
+ * legitimate shops use do NOT count. */
 (function () {
   var CF = (globalThis.CheapFinder = globalThis.CheapFinder || {});
 
   CF.MAX_SCORE = 10;
 
+  // Apps whose sole purpose is drop-ship fulfilment / AliExpress import.
   var DROPSHIP_APPS = [
     "dsers", "oberlo", "zendrop", "cjdropshipping", "spocket", "autods",
-    "eprolo", "dropified", "importify", "alireviews", "loox", "vitals-app",
-    "trackingmore", "aftership", "17track"
+    "eprolo", "dropified", "importify", "alireviews"
   ];
 
   function scriptSources(doc) {
@@ -17,6 +19,11 @@
     var scripts = doc.querySelectorAll("script[src]");
     for (var i = 0; i < scripts.length; i++) out.push(scripts[i].getAttribute("src") || "");
     return out.join("\n").toLowerCase();
+  }
+
+  // Word-ish boundary match so "autods" can't fire inside a random hash.
+  function containsToken(haystack, needle) {
+    return new RegExp("(^|[^a-z0-9])" + needle + "([^a-z0-9]|$)").test(haystack);
   }
 
   function imageSources(doc) {
@@ -28,16 +35,22 @@
     return out.join("\n").toLowerCase();
   }
 
+  /* Selector probes only — never serialize the document (huge DOMs). */
   function detectPlatform(doc, srcs) {
-    var html = (doc.documentElement.innerHTML || "").slice(0, 400000).toLowerCase();
-    if (srcs.indexOf("cdn.shopify.com") !== -1 || html.indexOf("shopify.shop") !== -1 || html.indexOf("cdn.shopify.com") !== -1) return "Shopify";
+    if (srcs.indexOf("cdn.shopify.com") !== -1 ||
+        doc.querySelector('link[href*="cdn.shopify.com"], meta[content*="Shopify" i]')) return "Shopify";
     var gen = doc.querySelector('meta[name="generator"]');
     var g = gen && gen.getAttribute("content") ? gen.getAttribute("content").toLowerCase() : "";
-    if (g.indexOf("woocommerce") !== -1 || html.indexOf("woocommerce") !== -1) return "WooCommerce";
+    if (g.indexOf("woocommerce") !== -1 ||
+        doc.querySelector('link[href*="/wp-content/plugins/woocommerce"], body.woocommerce, body.woocommerce-page')) return "WooCommerce";
     if (g.indexOf("wix") !== -1) return "Wix";
-    if (html.indexOf("bigcommerce") !== -1) return "BigCommerce";
+    if (g.indexOf("bigcommerce") !== -1 || srcs.indexOf("bigcommerce.com") !== -1) return "BigCommerce";
     return null;
   }
+
+  // Delivery ranges only count near shipping-related words, so "refunds are
+  // processed in 7-14 days" in a returns policy doesn't fire.
+  var SHIPPING_RANGE = /(?:shipping|delivery|deliver(?:y|ed)?|arriv\w+|dispatch\w*|transit)[^.!?]{0,80}?(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*|working\s*)?days/;
 
   /* domainAgeMonths comes from the background RDAP lookup and may be null. */
   CF.assessDropship = function (doc, opts) {
@@ -56,24 +69,26 @@
       signals.push({ id: "platform", weight: 1, label: platform + " storefront (common for drop-ship shops)" });
     }
 
-    var apps = DROPSHIP_APPS.filter(function (a) { return srcs.indexOf(a) !== -1; });
+    var apps = DROPSHIP_APPS.filter(function (a) { return containsToken(srcs, a); });
     if (apps.length) {
-      signals.push({ id: "apps", weight: 3, label: "Drop-shipping/fulfilment app detected: " + apps.slice(0, 3).join(", ") });
+      signals.push({ id: "apps", weight: 3, label: "Drop-shipping app detected: " + apps.slice(0, 3).join(", ") });
     }
 
     if (imgs.indexOf("alicdn.com") !== -1 || imgs.indexOf("aliexpress-media.com") !== -1 || imgs.indexOf("kwcdn.com") !== -1) {
       signals.push({ id: "cdn", weight: 3, label: "Product images hosted on AliExpress/Temu CDNs" });
     }
 
-    var shipMatch = text.match(/(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*|working\s*)?days/);
+    var shipMatch = text.match(SHIPPING_RANGE);
     if (shipMatch && parseInt(shipMatch[2], 10) >= 10) {
-      signals.push({ id: "shipping", weight: 2, label: "Long delivery estimate on page (" + shipMatch[0].trim() + ")" });
+      signals.push({ id: "shipping", weight: 2, label: "Long delivery estimate on page (" + shipMatch[1] + "-" + shipMatch[2] + " days)" });
     } else if (/ships?\s+from\s+(china|overseas)|overseas\s+warehouse/.test(text)) {
       signals.push({ id: "shipping", weight: 2, label: "Page mentions shipping from China / overseas warehouse" });
     }
 
-    if (/only\s+\d+\s+left|people\s+are\s+viewing|selling\s+fast|hurry[,!\s]|sale\s+ends\s+in|\d+\s+sold\s+in\s+the\s+last/.test(text)) {
-      signals.push({ id: "urgency", weight: 1, label: "Urgency widgets (fake-scarcity pattern)" });
+    // "Only N left in stock" alone is genuine retail phrasing (Amazon uses
+    // it) — only social-pressure widgets count.
+    if (/people\s+are\s+viewing|selling\s+fast|hurry[,!\s]|sale\s+ends\s+in|\d+\s+sold\s+in\s+the\s+last/.test(text)) {
+      signals.push({ id: "urgency", weight: 1, label: "Urgency widgets (social-pressure pattern)" });
     }
 
     if (/free\s+worldwide\s+shipping/.test(text)) {

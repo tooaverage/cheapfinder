@@ -1,9 +1,11 @@
 # Legitimate data sources for a public version
 
 Research date: 2026-07-29. Facts in this space change fast; items marked ⚠️ changed
-recently or are uncertain. The current extension is scrape-free by design on the
-comparison side (search links + best-effort fetches of public search pages); this doc is
-the roadmap for doing it *properly* at public scale.
+recently or are uncertain. The current extension is server-free: mostly search links,
+plus a best-effort client-side fetch of public Amazon/eBay search pages (which IS
+scraping-lite, is against their ToS, and is why it often falls back to links — fine for
+personal use, not for distribution). This doc is the roadmap for doing it *properly* at
+public scale.
 
 ## 1. How Google Lens / Google Shopping actually gets product + price data
 

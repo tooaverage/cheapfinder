@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { minify } from "terser";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -25,15 +26,14 @@ const bundle =
 
 writeFileSync(join(root, "bookmarklet/cheapfinder.js"), bundle);
 
-/* Light minification that is safe for our code style: strip block comments
- * and full-line // comments (we never use // at end of code lines in shared
- * modules except after code — so only strip lines that START with //). */
-const slim = bundle
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .split("\n")
-  .map((l) => l.replace(/^\s+/, " "))
-  .filter((l) => !/^\s*\/\//.test(l) && l.trim() !== "")
-  .join("\n");
+const minified = await minify(bundle, {
+  compress: { passes: 2 },
+  mangle: true,
+  format: { comments: false }
+});
+if (minified.error) throw minified.error;
+const slim = minified.code;
+new Function(slim); // build-time syntax smoke check on what actually ships
 
 const href = "javascript:" + encodeURIComponent(slim);
 
@@ -86,16 +86,22 @@ const page = `<!doctype html>
     var btn = document.getElementById("copy");
     btn.addEventListener("click", function () {
       var ta = document.getElementById("code");
-      var text = ta.value;
-      (navigator.clipboard && navigator.clipboard.writeText
-        ? navigator.clipboard.writeText(text)
-        : Promise.reject()
-      ).catch(function () {
-        ta.style.position = "static"; ta.select();
-        document.execCommand("copy");
+      var ok = document.getElementById("ok");
+      function fallbackCopy() {
+        ta.style.position = "static";
+        ta.focus();
+        ta.setSelectionRange(0, ta.value.length); // iOS Safari needs this, select() is not enough
+        var copied = false;
+        try { copied = document.execCommand("copy"); } catch (e) {}
         ta.style.position = "absolute";
-      }).then(function () {
-        document.getElementById("ok").textContent = "Copied ✓";
+        return copied;
+      }
+      var p = navigator.clipboard && navigator.clipboard.writeText
+        ? navigator.clipboard.writeText(ta.value).then(function () { return true; }, fallbackCopy)
+        : Promise.resolve(fallbackCopy());
+      p.then(function (copied) {
+        ok.textContent = copied ? "Copied ✓" : "Copy failed — tap the code below and copy manually";
+        if (!copied) { ta.style.position = "static"; ta.style.width = "100%"; ta.rows = 6; }
       });
     });
   </script>

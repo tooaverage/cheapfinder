@@ -4,7 +4,7 @@
  * Artifacts (screenshots) land in test/e2e/artifacts/. */
 import { chromium } from "playwright";
 import http from "node:http";
-import { readFileSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,25 +35,43 @@ const extPath = join(root, "extension");
 const profile = join(artifacts, "profile");
 rmSync(profile, { recursive: true, force: true });
 
-// Use the full pre-installed Chromium (extensions don't run in the
-// headless shell). Falls back to Playwright's own resolution if absent.
-const exe = process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium";
+// Extensions need full Chromium (the default headless shell can't load
+// them). Preference order: $CHROMIUM_PATH, a preinstalled Playwright
+// chromium, else Playwright's own resolution (`npx playwright install
+// chromium` first on a fresh machine).
+const preinstalled = "/opt/pw-browsers/chromium";
+const exe =
+  process.env.CHROMIUM_PATH || (existsSync(preinstalled) ? preinstalled : undefined);
 const context = await chromium.launchPersistentContext(profile, {
   headless: true,
-  executablePath: exe,
+  ...(exe ? { executablePath: exe } : { channel: "chromium" }),
   args: [
     `--disable-extensions-except=${extPath}`,
     `--load-extension=${extPath}`
   ]
 });
 
+let plain = null;
 try {
+  // The panel's shadow root is closed in production; flip the test-only
+  // exposeShadow setting (via the extension's own popup page) so these
+  // checks can read panel content.
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 10000 });
+  const extId = new URL(sw.url()).host;
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extId}/popup.html`);
+  await popup.evaluate(() => new Promise((r) => chrome.storage.sync.set({ exposeShadow: true }, r)));
+  await popup.close();
+
   // ---- Extension on a dropship-flavored product page ----
   const page = await context.newPage();
   await page.goto(`${base}/shopify-product.html`, { waitUntil: "domcontentloaded" });
-  const host = page.locator("[data-cheapfinder]");
-  await host.waitFor({ state: "attached", timeout: 10000 });
-  check("extension mounts popover host", true);
+  const mounted = await page
+    .locator("[data-cheapfinder]")
+    .waitFor({ state: "attached", timeout: 10000 })
+    .then(() => true, () => false);
+  check("extension mounts popover host", mounted);
 
   const panelText = await page.evaluate(() => {
     const h = document.querySelector("[data-cheapfinder]");
@@ -65,7 +83,7 @@ try {
 
   const links = await page.evaluate(() => {
     const h = document.querySelector("[data-cheapfinder]");
-    return [...h.shadowRoot.querySelectorAll("a")].map((a) => a.href);
+    return h ? [...h.shadowRoot.querySelectorAll("a")].map((a) => a.href) : [];
   });
   check("has AliExpress link", links.some((l) => l.includes("aliexpress.com")), JSON.stringify(links));
   check("has Temu link", links.some((l) => l.includes("temu.com")));
@@ -79,18 +97,16 @@ try {
   }, { timeout: 20000 }).catch(() => {});
   const spinnerGone = await page.evaluate(() => {
     const h = document.querySelector("[data-cheapfinder]");
-    return !h.shadowRoot.querySelector(".spin");
+    return !!h && !h.shadowRoot.querySelector(".spin");
   });
   check("live lookups settle (results or fallback links)", spinnerGone);
   await page.screenshot({ path: join(artifacts, "extension-panel.png") });
 
   // Collapse to badge
-  await page.evaluate(() => {
-    const h = document.querySelector("[data-cheapfinder]");
-    h.shadowRoot.querySelector(".iconbtn").click();
-  });
   const badgeVisible = await page.evaluate(() => {
     const h = document.querySelector("[data-cheapfinder]");
+    if (!h) return false;
+    h.shadowRoot.querySelector(".iconbtn").click();
     return !!h.shadowRoot.querySelector(".badge");
   });
   check("close collapses to badge", badgeVisible);
@@ -102,13 +118,19 @@ try {
   const none = await page2.evaluate(() => !document.querySelector("[data-cheapfinder]"));
   check("no popover on non-product page", none);
 
-  // ---- Bookmarklet bundle in a plain browser (no extension) ----
-  const plain = await chromium.launch({ headless: true, executablePath: exe });
+  // ---- Bookmarklet in a plain browser (no extension) ----
+  // Test the ENCODED javascript: URL from install.html — the exact bytes
+  // users install — not the readable bundle.
+  plain = await chromium.launch({ headless: true, ...(exe ? { executablePath: exe } : { channel: "chromium" }) });
   const page3 = await plain.newPage();
   page3.on("dialog", (d) => { console.log("# bookmarklet dialog:", d.message()); d.dismiss(); });
   page3.on("pageerror", (e) => console.log("# bookmarklet pageerror:", String(e).slice(0, 300)));
   await page3.goto(`${base}/og-product.html`, { waitUntil: "domcontentloaded" });
-  const bundle = readFileSync(join(root, "bookmarklet/cheapfinder.js"), "utf8");
+  await page3.evaluate(() => { window.__CF_TEST_OPEN_SHADOW = true; });
+  const installHtml = readFileSync(join(root, "bookmarklet/install.html"), "utf8");
+  const hrefMatch = installHtml.match(/href="javascript:([^"]+)"/);
+  check("install.html contains bookmarklet href", !!hrefMatch);
+  const bundle = decodeURIComponent(hrefMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
   await page3.evaluate(bundle).catch((e) => console.log("# bundle eval error:", String(e).slice(0, 400)));
   const bmText = await page3.evaluate(() => {
     const hosts = document.querySelectorAll("[data-cheapfinder]");
@@ -123,8 +145,8 @@ try {
   await page3.evaluate(bundle);
   const toggled = await page3.evaluate(() => !document.querySelector("[data-cheapfinder]"));
   check("second bookmarklet run dismisses panel", toggled);
-  await plain.close();
 } finally {
+  if (plain) await plain.close().catch(() => {});
   await context.close();
   server.close();
 }

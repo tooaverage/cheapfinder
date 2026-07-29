@@ -10,7 +10,10 @@ Browser extension + bookmarklet that answers two questions on any shop's product
    **Google Lens search by the product's image**.
 
 Everything runs locally in your browser. No server, no accounts, no analytics, no
-affiliate-link injection — nothing is collected.
+affiliate-link injection. The only network traffic is the optional live-price lookup
+(sends the product title to Amazon/eBay and the shop's domain to rdap.org for a
+registration-age check) — it's disclosed in the panel footer and can be switched off in
+the extension popup.
 
 ![extension panel](docs/screenshot-extension.png)
 
@@ -21,6 +24,10 @@ affiliate-link injection — nothing is collected.
 3. **Load unpacked** → select the `extension/` folder.
 4. Visit any product page — the panel opens automatically (configurable via the
    extension's toolbar popup).
+
+The extension deliberately stays off the marketplaces it compares against (Amazon,
+eBay, AliExpress, Temu, Walmart, Google) and off payment providers — it isn't broken
+there, it's excluded by design.
 
 ## Install — phone (iPhone / Android)
 
@@ -59,9 +66,14 @@ your phone. On iOS, Kagi's Orion browser can also load the Chrome extension dire
 ```bash
 npm install
 npm test                  # unit tests (jsdom): extraction, parsers, heuristics
+npx playwright install chromium  # once, unless a Chromium is already available
 npm run e2e               # real Chromium: loads the unpacked extension + bookmarklet
 npm run build:bookmarklet # regenerate bookmarklet bundle + install page
 ```
+
+The e2e runner picks a browser in this order: `$CHROMIUM_PATH`, a preinstalled
+Playwright Chromium, then Playwright's default resolution. It needs full Chromium
+(not the headless shell) because it loads the unpacked extension.
 
 Layout: `extension/shared/` holds the engine (extraction, heuristics, sites, UI) shared
 verbatim between the content script and the bookmarklet bundle; `extension/content.js`
@@ -79,7 +91,12 @@ produces `bookmarklet/cheapfinder.js` and `bookmarklet/install.html`.
 - The drop-ship score is a heuristic, not proof. A Shopify store with slow shipping can
   be a legitimate small business. The panel always shows *why* it scored what it scored.
 - Match quality is keyword-based (plus Lens by image); identical products with wildly
-  different titles can slip through — that's what the Lens row is for.
+  different titles can slip through — that's what the Lens row is for. Live price
+  highlighting only happens for USD page prices, since the live results come from
+  amazon.com/ebay.com.
+- The bookmarklet runs in the page's own JavaScript world, so a page that patches
+  built-ins (`JSON.parse`, array prototypes) can break or fool it. The extension's
+  content script runs in an isolated world and doesn't have this weakness.
 
 ## License
 

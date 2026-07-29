@@ -6,7 +6,10 @@
   if (!CF || CF.__contentLoaded) return;
   CF.__contentLoaded = true;
 
-  var DEFAULTS = { enabled: true, autoOpen: true, disabledHosts: [] };
+  // livePrices sends the product title to Amazon/eBay and the shop's
+  // domain to rdap.org — disclosed in the popup, can be turned off.
+  // exposeShadow is a test-only hook (open shadow root for e2e).
+  var DEFAULTS = { enabled: true, autoOpen: true, livePrices: true, disabledHosts: [], exposeShadow: false };
   var panel = null;
   var lastUrl = null;
   var runToken = 0;
@@ -40,8 +43,14 @@
       var r = resp && resp[siteId];
       mounted.setLive(siteId, r && r.status === "done" ? r : { status: "error" });
     });
-    // Highlight the cheapest live match that beats the page price.
-    var pageAmount = product.price && product.price.amount;
+    // Highlight the cheapest live match that beats the page price — but
+    // only when the page price is USD (or unknown currency): live results
+    // come from amazon.com/ebay.com and are dollar-priced, so comparing
+    // against ¥ or zł amounts would be nonsense.
+    var pagePrice = product.price;
+    var pageCurrency = pagePrice && pagePrice.currency;
+    if (pageCurrency && pageCurrency !== "USD") return;
+    var pageAmount = pagePrice && pagePrice.amount;
     var bestSite = null, bestAmount = Infinity;
     ["amazon", "ebay"].forEach(function (siteId) {
       var r = resp && resp[siteId];
@@ -70,19 +79,24 @@
       var assessment = CF.assessDropship(document, {});
       var query = CF.buildSearchQuery(product);
       if (!query) return;
+      var live = !!settings.livePrices;
 
-      panel = CF.mountPanel({
-        product: product,
-        assessment: assessment,
-        sites: CF.SITES,
-        query: query,
-        currentHost: host,
-        liveEnabled: true,
-        startOpen: settings.autoOpen,
-        onClose: function () {}
-      });
+      try {
+        panel = CF.mountPanel({
+          product: product,
+          assessment: assessment,
+          sites: CF.SITES,
+          query: query,
+          currentHost: host,
+          liveEnabled: live,
+          exposeShadow: !!settings.exposeShadow,
+          startOpen: settings.autoOpen,
+          onClose: function () {}
+        });
+      } catch (e) { return; } // e.g. XML documents can't host a shadow root
       var mounted = panel;
 
+      if (!live) return;
       requestCompare({
         query: query,
         domain: host,
@@ -97,11 +111,14 @@
           if (withAge.score !== assessment.score) {
             var wasOpen = mounted.isOpen();
             mounted.destroy();
-            panel = CF.mountPanel({
-              product: product, assessment: withAge, sites: CF.SITES,
-              query: query, currentHost: host, liveEnabled: true,
-              startOpen: wasOpen, onClose: function () {}
-            });
+            try {
+              panel = CF.mountPanel({
+                product: product, assessment: withAge, sites: CF.SITES,
+                query: query, currentHost: host, liveEnabled: live,
+                exposeShadow: !!settings.exposeShadow,
+                startOpen: wasOpen, onClose: function () {}
+              });
+            } catch (e) { panel = null; return; }
             applyLiveResults(panel, product, resp);
           }
         }

@@ -25,6 +25,7 @@
     query: query,
     currentHost: location.hostname,
     liveEnabled: false,
+    exposeShadow: !!globalThis.__CF_TEST_OPEN_SHADOW, // test hook
     startOpen: true
   });
 })();

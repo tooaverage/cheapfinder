@@ -16,7 +16,7 @@
   CF.parsePrice = function (raw) {
     if (raw == null) return null;
     if (typeof raw === "number") {
-      return isFinite(raw) ? { amount: raw, currency: null, raw: String(raw) } : null;
+      return isFinite(raw) && raw > 0 ? { amount: raw, currency: null, raw: String(raw) } : null;
     }
     var s = String(raw).trim();
     if (!s) return null;
@@ -53,12 +53,16 @@
         : num.replace(/,/g, "");
     } else if (lastDot !== -1) {
       var afterDot = num.length - lastDot - 1;
-      // "1.299" with a single dot and 3 digits after is almost always a
-      // European thousands separator, not $1.299.
-      normalized = (num.indexOf(".") === lastDot && afterDot === 3) ? num.replace(/\./g, "") : num;
-      if (num.indexOf(".") !== lastDot) {
-        // Multiple dots: all but the last are thousands separators.
+      if (afterDot === 3) {
+        // "1.299" / "1.234.567": dot-groups of three read as European
+        // thousands separators, not $1.299.
+        normalized = num.replace(/\./g, "");
+      } else if (num.indexOf(".") !== lastDot) {
+        // Multiple dots, short last group ("1.234.56"): all but the last
+        // are thousands separators.
         normalized = num.slice(0, lastDot).replace(/\./g, "") + num.slice(lastDot);
+      } else {
+        normalized = num;
       }
     } else {
       normalized = num;
@@ -161,11 +165,14 @@
 
   function fromOpenGraph(doc) {
     var ogType = metaContent(doc, 'meta[property="og:type"]') || "";
+    var isProduct = ogType.toLowerCase().indexOf("product") !== -1;
     var priceAmount =
       metaContent(doc, 'meta[property="product:price:amount"]') ||
-      metaContent(doc, 'meta[property="og:price:amount"]') ||
-      metaContent(doc, 'meta[itemprop="price"]');
-    if (ogType.toLowerCase().indexOf("product") === -1 && !priceAmount) return null;
+      metaContent(doc, 'meta[property="og:price:amount"]');
+    // A bare meta[itemprop=price] also shows up on category/list pages, so
+    // it only counts as a price source, never as the product trigger.
+    if (!priceAmount && isProduct) priceAmount = metaContent(doc, 'meta[itemprop="price"]');
+    if (!isProduct && !priceAmount) return null;
 
     var title = metaContent(doc, 'meta[property="og:title"]') || (doc.title || "").trim();
     if (!title) return null;

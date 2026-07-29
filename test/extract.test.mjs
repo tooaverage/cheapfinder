@@ -51,9 +51,13 @@ test("price parsing edge cases", () => {
   assert.equal(CF.parsePrice("USD 45").currency, "USD");
   assert.equal(CF.parsePrice("£9.50").currency, "GBP");
   assert.equal(CF.parsePrice(19.5).amount, 19.5);
+  assert.equal(CF.parsePrice("1.234.567").amount, 1234567); // EU millions
+  assert.equal(CF.parsePrice("1.234.56").amount, 1234.56);
   assert.equal(CF.parsePrice(""), null);
   assert.equal(CF.parsePrice("free"), null);
   assert.equal(CF.parsePrice("0"), null);
+  assert.equal(CF.parsePrice(0), null); // JSON-LD "price": 0 placeholder
+  assert.equal(CF.parsePrice(-5), null);
 });
 
 test("search query drops noise words and caps length", () => {
@@ -74,6 +78,10 @@ test("titleSimilarity behaves", () => {
   const far = CF.titleSimilarity(a, "Stainless Steel Garden Hose 50ft Expandable");
   assert.ok(close > 0.5, String(close));
   assert.ok(far < 0.2, String(far));
+  // Short accessory titles must NOT be inflated (this is why similarity is
+  // query-coverage, not min-overlap): a $3 case is not a cheaper iPhone.
+  const accessory = CF.titleSimilarity("Apple iPhone 15 Pro Max 256GB Natural Titanium", "iphone 15 case");
+  assert.ok(accessory < 0.5, String(accessory));
 });
 
 test("dropship heuristics on a Shopify/AliExpress-flavored page", () => {
@@ -94,6 +102,25 @@ test("clean handmade shop scores low", () => {
   const a = CF.assessDropship(document, {});
   assert.ok(a.score < 3, JSON.stringify(a.signals));
   assert.equal(a.tone, "ok");
+});
+
+test("legit-shop phrasings do not trip signals", () => {
+  const html = `<!doctype html><html><head><title>Shop</title>
+    <script src="https://cdn.shopify.com/s/files/1/1/assets/theme.js"></script>
+    <script src="https://cdn.example.com/loox-reviews.js"></script>
+    <script src="https://cdn.example.com/aftership-tracking.js"></script>
+    </head><body>
+    <h1>Linen Shirt</h1>
+    <p>Only 3 left in stock - order soon.</p>
+    <p>Refunds are processed in 7-14 days after we receive the item.</p>
+    </body></html>`;
+  const { CF, document } = loadCF(html);
+  const a = CF.assessDropship(document, {});
+  const ids = a.signals.map((s) => s.id);
+  assert.ok(!ids.includes("apps"), "loox/aftership must not count as dropship apps: " + JSON.stringify(a.signals));
+  assert.ok(!ids.includes("shipping"), "refund window is not a delivery estimate");
+  assert.ok(!ids.includes("urgency"), "a plain stock counter is not an urgency widget");
+  assert.equal(a.tone, "ok"); // only the +1 Shopify platform signal remains
 });
 
 test("domain age adds signal", () => {

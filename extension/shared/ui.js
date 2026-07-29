@@ -75,9 +75,20 @@
   CF.mountPanel = function (opts) {
     var host = el("div");
     host.setAttribute("data-cheapfinder", "1");
-    var shadow = host.attachShadow({ mode: "open" });
-    var style = el("style"); style.textContent = STYLE;
-    shadow.appendChild(style);
+    // Closed by default so the (possibly hostile) shop page can't rewrite
+    // the verdict or swap link targets. opts.exposeShadow is a test hook.
+    var shadow = host.attachShadow({ mode: opts.exposeShadow ? "open" : "closed" });
+    // adoptedStyleSheets is immune to the page's style-src CSP; fall back
+    // to a <style> element where constructable sheets are unavailable.
+    try {
+      var sheet = new CSSStyleSheet();
+      sheet.replaceSync(STYLE);
+      shadow.adoptedStyleSheets = [sheet];
+    } catch (e) {
+      var style = el("style");
+      style.textContent = STYLE;
+      shadow.appendChild(style);
+    }
 
     var root = el("div", "root");
     shadow.appendChild(root);
@@ -148,7 +159,8 @@
     table.appendChild(tbody);
 
     (opts.sites || []).forEach(function (site) {
-      if (opts.currentHost && opts.currentHost.indexOf(site.host) !== -1) return;
+      var h = opts.currentHost || "";
+      if (h === site.host || h.slice(-(site.host.length + 1)) === "." + site.host) return;
       var tr = el("tr");
       var tdSite = el("td", "site");
       tdSite.appendChild(link(site.searchUrl(opts.query), site.name));
@@ -179,7 +191,10 @@
 
     var foot = el("div", "foot");
     foot.appendChild(document.createTextNode(
-      "Heuristics only — verify before buying. Runs locally; nothing is collected. "));
+      "Heuristics only — verify before buying. No tracking or accounts; " +
+      (opts.liveEnabled
+        ? "live lookups query Amazon/eBay directly (toggle in settings). "
+        : "links only, nothing leaves this page. ")));
     foot.appendChild(link("https://github.com/tooaverage/cheapfinder", "About"));
     panel.appendChild(foot);
 

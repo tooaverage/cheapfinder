@@ -14,10 +14,13 @@
     var tokens = title
       .replace(/[|/,()\[\]{}™®©–—-]+/g, " ")
       .split(/\s+/)
+      .map(function (t) {
+        // Strip leading/trailing punctuation so "Shipping!" is recognized
+        // as the noise word "shipping".
+        return t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "");
+      })
       .filter(function (t) {
-        if (!t) return false;
-        var lower = t.toLowerCase();
-        return NOISE_WORDS.indexOf(lower) === -1 && !/^[!%*&#@+~^"'.:;?]+$/.test(t);
+        return t && NOISE_WORDS.indexOf(t.toLowerCase()) === -1;
       });
     var q = tokens.slice(0, 8).join(" ").trim();
     if (product && product.brand && q.toLowerCase().indexOf(product.brand.toLowerCase()) === -1) {
@@ -60,14 +63,17 @@
     return set;
   }
 
-  /* Overlap coefficient: |A ∩ B| / min(|A|,|B|). Robust when one title is
-   * much longer than the other (Amazon titles are essays). */
-  CF.titleSimilarity = function (a, b) {
-    var A = tokenSet(a), B = tokenSet(b);
-    var keysA = Object.keys(A), keysB = Object.keys(B);
-    if (!keysA.length || !keysB.length) return 0;
+  /* Asymmetric query coverage: what fraction of the QUERY's tokens appear
+   * in the candidate title. Deliberately not min-overlap: a short accessory
+   * title like "iphone 15 case" must not score high against a query for
+   * the phone itself, while a long Amazon essay-title that contains all
+   * query tokens scores 1.0. Call as (query, candidateTitle). */
+  CF.titleSimilarity = function (query, candidate) {
+    var A = tokenSet(query), B = tokenSet(candidate);
+    var keysA = Object.keys(A);
+    if (!keysA.length || !Object.keys(B).length) return 0;
     var inter = 0;
     for (var i = 0; i < keysA.length; i++) if (B[keysA[i]]) inter++;
-    return inter / Math.min(keysA.length, keysB.length);
+    return inter / keysA.length;
   };
 })();

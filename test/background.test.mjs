@@ -31,6 +31,10 @@ const ebayHtml = `
   <span class="s-item__price">$18.95</span>
 </div></li>
 <li class="s-item"><div class="s-item__wrapper">
+  <a href="https://www.ebay.com/itm/789"><div class="s-item__title"><span role="heading"><span class="LIGHT_HIGHLIGHT">New Listing</span>Neck Fan Bladeless Portable 4000mAh Rechargeable</span></div></a>
+  <span class="s-item__price">$16.50</span>
+</div></li>
+<li class="s-item"><div class="s-item__wrapper">
   <a href="https://www.ebay.com/itm/1"><div class="s-item__title">Shop on eBay</div></a>
   <span class="s-item__price">$20.00</span>
 </div></li>`;
@@ -44,11 +48,13 @@ test("parseAmazon extracts title, price, asin url", () => {
   assert.equal(items[1].title, "Garden Hose Expandable 50ft & Nozzle");
 });
 
-test("parseEbay extracts and skips placeholder card", () => {
+test("parseEbay extracts, strips New Listing badge, skips placeholder", () => {
   const items = globalThis.parseEbay(ebayHtml);
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0].priceAmount, 18.95);
   assert.equal(items[0].url, "https://www.ebay.com/itm/123456");
+  assert.equal(items[1].title, "Neck Fan Bladeless Portable 4000mAh Rechargeable");
+  assert.equal(items[1].priceAmount, 16.5);
 });
 
 test("rankResults filters dissimilar items and sorts by price", () => {
