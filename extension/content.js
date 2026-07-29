@@ -95,13 +95,12 @@
           // remounting only if it changes the assessment.
           var withAge = CF.assessDropship(document, { domainAgeMonths: resp.domainAgeMonths });
           if (withAge.score !== assessment.score) {
-            var wasOpen = true; // keep current visibility simple: reopen as before
+            var wasOpen = mounted.isOpen();
             mounted.destroy();
-            if (panel !== mounted) return;
             panel = CF.mountPanel({
               product: product, assessment: withAge, sites: CF.SITES,
               query: query, currentHost: host, liveEnabled: true,
-              startOpen: settings.autoOpen && wasOpen, onClose: function () {}
+              startOpen: wasOpen, onClose: function () {}
             });
             applyLiveResults(panel, product, resp);
           }

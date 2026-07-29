@@ -220,6 +220,7 @@
           td.appendChild(link(row.site.searchUrl(opts.query), "search →", "small muted"));
         }
       },
+      isOpen: function () { return state.open; },
       markBest: function (siteId) {
         var row = state.rows[siteId];
         if (row) row.tr.className = "best";
