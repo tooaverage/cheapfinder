@@ -21,6 +21,13 @@
   var assessment = CF.assessDropship(document, {});
   var query = CF.buildSearchQuery(product);
 
+  // Text selected on the page before tapping the bookmark wins: select any
+  // product name anywhere and search exactly that.
+  try {
+    var sel = String(window.getSelection ? window.getSelection() : "").replace(/\s+/g, " ").trim();
+    if (sel.length >= 3 && sel.length <= 200) query = sel;
+  } catch (e) {}
+
   CF.mountPanel({
     product: product,
     assessment: assessment,

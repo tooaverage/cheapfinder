@@ -160,6 +160,20 @@ try {
   });
   check("bookmarklet handles SPA shop without structured data", /Frenchy Solid Linen/.test(spaText || ""), spaText || "null");
   check("SPA shop price detected from price-classed element", /\$18\.49/.test(spaText || ""));
+
+  // Editing the query box retargets every site link.
+  const retargeted = await page4.evaluate(() => {
+    const h = document.querySelector("[data-cheapfinder]");
+    if (!h || !h.shadowRoot) return null;
+    const input = h.shadowRoot.querySelector(".qinput");
+    input.value = "vintage watch";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return [...h.shadowRoot.querySelectorAll("a")]
+      .filter((a) => a.href.includes("google.com/search"))
+      .map((a) => a.href);
+  });
+  check("query box retargets Google Shopping link",
+    (retargeted || []).some((l) => l.includes("vintage%20watch")), JSON.stringify(retargeted));
 } finally {
   if (plain) await plain.close().catch(() => {});
   await context.close();

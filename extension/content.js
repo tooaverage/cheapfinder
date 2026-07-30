@@ -82,6 +82,17 @@
       if (!query) return;
       var live = !!settings.livePrices;
 
+      var runLive = function (mountedPanel, q) {
+        ["amazon", "ebay"].forEach(function (id) { mountedPanel.setLive(id, { status: "loading" }); });
+        requestCompare({
+          query: q,
+          domain: host,
+          pageAmount: product.price ? product.price.amount : null
+        }).then(function (resp) {
+          if (panel === mountedPanel) applyLiveResults(mountedPanel, product, resp);
+        });
+      };
+
       try {
         panel = CF.mountPanel({
           product: product,
@@ -92,7 +103,8 @@
           liveEnabled: live,
           exposeShadow: !!settings.exposeShadow,
           startOpen: settings.autoOpen,
-          onClose: function () {}
+          onClose: function () {},
+          onQuerySubmit: live ? function (q) { if (panel) runLive(panel, q); } : null
         });
       } catch (e) { return; } // e.g. XML documents can't host a shadow root
       var mounted = panel;
@@ -117,7 +129,8 @@
                 product: product, assessment: withAge, sites: CF.SITES,
                 query: query, currentHost: host, liveEnabled: live,
                 exposeShadow: !!settings.exposeShadow,
-                startOpen: wasOpen, onClose: function () {}
+                startOpen: wasOpen, onClose: function () {},
+                onQuerySubmit: function (q) { if (panel) runLive(panel, q); }
               });
             } catch (e) { panel = null; return; }
             applyLiveResults(panel, product, resp);

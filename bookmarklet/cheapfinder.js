@@ -557,6 +557,10 @@
     ".prod img{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#2a2d38;flex:none}" +
     ".prod .t{font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}" +
     ".prod .p{color:#9aa0a6;margin-top:2px;font-size:12px}" +
+    ".qrow{padding:0 14px 10px}" +
+    ".qinput{width:100%;box-sizing:border-box;background:#22242c;border:1px solid #34384a;border-radius:8px;" +
+      "color:#e8eaed;padding:7px 10px;font-size:12.5px;font-family:inherit;outline:none}" +
+    ".qinput:focus{border-color:#5b8cff}" +
     ".verdict{margin:0 14px 10px;padding:8px 10px;border-radius:9px;font-weight:600;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}" +
     ".verdict.bad{background:rgba(239,83,80,.12);color:#ff8a80}" +
     ".verdict.warn{background:rgba(240,180,41,.12);color:#ffd54f}" +
@@ -625,7 +629,7 @@
     var root = el("div", "root");
     shadow.appendChild(root);
 
-    var state = { open: false, rows: {} };
+    var state = { open: false, rows: {}, query: opts.query };
     var tone = (opts.assessment && opts.assessment.tone) || "ok";
 
     var badge = el("button", "badge");
@@ -679,6 +683,34 @@
         sigList.style.display = sigList.style.display === "block" ? "none" : "block";
       });
     }
+
+    // Editable query: search for anything, not just the detected product.
+    // Typing retargets every row's link; Enter re-runs live lookups when
+    // the host wired up onQuerySubmit (extension only).
+    var qrow = el("div", "qrow");
+    var qinput = el("input", "qinput");
+    qinput.type = "search";
+    qinput.value = opts.query;
+    qinput.setAttribute("aria-label", "Search query");
+    qrow.appendChild(qinput);
+    panel.appendChild(qrow);
+
+    function refreshLinks() {
+      Object.keys(state.rows).forEach(function (id) {
+        var row = state.rows[id];
+        var anchors = row.tr.querySelectorAll("a");
+        for (var i = 0; i < anchors.length; i++) {
+          if (!anchors[i].hasAttribute("data-live")) anchors[i].href = row.site.searchUrl(state.query);
+        }
+      });
+    }
+    qinput.addEventListener("input", function () {
+      var q = qinput.value.trim();
+      if (q) { state.query = q; refreshLinks(); }
+    });
+    qinput.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && state.query && opts.onQuerySubmit) opts.onQuerySubmit(state.query);
+    });
 
     var table = el("table");
     var thead = el("thead");
@@ -754,11 +786,17 @@
         if (!row) return;
         var td = row.tdPrice;
         td.textContent = "";
+        row.tr.className = ""; // clear a stale "best" highlight
+        if (result && result.status === "loading") {
+          td.appendChild(el("span", "spin"));
+          return;
+        }
         var results = (result && result.results) || [];
         if (result && result.status === "done" && results.length) {
           var best = results[0];
-          var a = link(best.url || row.site.searchUrl(opts.query), best.priceRaw || "view");
+          var a = link(best.url || row.site.searchUrl(state.query), best.priceRaw || "view");
           a.className = "amt";
+          a.setAttribute("data-live", "1");
           td.appendChild(a);
           if (best.title) {
             var m = el("span", "match", best.title);
@@ -766,7 +804,7 @@
             td.appendChild(m);
           }
         } else {
-          td.appendChild(link(row.site.searchUrl(opts.query), "search →", "small muted"));
+          td.appendChild(link(row.site.searchUrl(state.query), "search →", "small muted"));
         }
       },
       isOpen: function () { return state.open; },
@@ -801,6 +839,13 @@
 
   var assessment = CF.assessDropship(document, {});
   var query = CF.buildSearchQuery(product);
+
+  // Text selected on the page before tapping the bookmark wins: select any
+  // product name anywhere and search exactly that.
+  try {
+    var sel = String(window.getSelection ? window.getSelection() : "").replace(/\s+/g, " ").trim();
+    if (sel.length >= 3 && sel.length <= 200) query = sel;
+  } catch (e) {}
 
   CF.mountPanel({
     product: product,
