@@ -9,9 +9,12 @@
   var existing = document.querySelector("[data-cheapfinder]");
   if (existing) { existing.remove(); return; }
 
-  var product = CF.extractProduct(document, location);
+  // Loose extraction: the user tapped the bookmark on purpose, so always
+  // show the panel with a best guess instead of giving up (heavy SPAs like
+  // Shein expose no structured product data).
+  var product = CF.extractProductLoose(document, location);
   if (!product.found) {
-    alert("CheapFinder: no product detected on this page.");
+    alert("CheapFinder: couldn't find anything that looks like a product here.");
     return;
   }
 

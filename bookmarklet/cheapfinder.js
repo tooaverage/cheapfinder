@@ -225,21 +225,67 @@
     };
   }
 
-  var PRODUCT_PATH = /\/(products?|item|itm|dp|listing|p)\//i;
+  var PRODUCT_PATH = /\/(products?|item|itm|dp|listing|p|pd|goods|prod)\/|-p-\d|\/p\d{5,}/i;
+
+  var PRICE_PATTERN = /(?:US?\$|CA?\$|AU?\$|[$€£¥]|\b(?:USD|CAD|EUR|GBP|AUD)\b)\s?\d[\d.,]*/;
+
+  // Shops almost universally label the price element with a "price" class.
+  function guessPrice(doc) {
+    var els = doc.querySelectorAll('[itemprop="price"], [data-price], [class*="price" i]');
+    for (var i = 0; i < Math.min(els.length, 20); i++) {
+      var t = (els[i].getAttribute("content") || els[i].textContent || "").slice(0, 60);
+      var m = t.match(PRICE_PATTERN);
+      var p = m && CF.parsePrice(m[0]);
+      if (p) return p;
+    }
+    var body = doc.body ? (doc.body.textContent || "").slice(0, 200000) : "";
+    var bm = body.match(PRICE_PATTERN);
+    return bm ? CF.parsePrice(bm[0]) : null;
+  }
+
+  function guessImage(doc) {
+    var og = metaContent(doc, 'meta[property="og:image"]');
+    if (og) return og;
+    var best = null, bestArea = 40000; // ignore icons/thumbnails
+    var imgs = doc.images || [];
+    for (var i = 0; i < Math.min(imgs.length, 300); i++) {
+      var im = imgs[i];
+      var src = im.currentSrc || im.src || "";
+      if (!src || src.slice(0, 5) === "data:" || /\.svg(\?|$)/i.test(src)) continue;
+      var area = (im.naturalWidth || im.width || 0) * (im.naturalHeight || im.height || 0);
+      if (area > bestArea) { bestArea = area; best = src; }
+    }
+    return best;
+  }
+
+  // "SHEIN Frenchy Linen Pants | SHEIN USA" -> longest segment wins.
+  function cleanTitle(t) {
+    if (!t) return null;
+    var parts = String(t).split(/\s*[|•]\s*/);
+    var best = "";
+    for (var i = 0; i < parts.length; i++) if (parts[i].length > best.length) best = parts[i];
+    best = best.replace(/\s+/g, " ").trim();
+    return best.length >= 3 ? best : null;
+  }
+
+  function bestGuessTitle(doc) {
+    var h1 = doc.querySelector("h1");
+    var t = h1 && h1.textContent ? cleanTitle(h1.textContent) : null;
+    return t ||
+      cleanTitle(metaContent(doc, 'meta[property="og:title"]')) ||
+      cleanTitle(metaContent(doc, 'meta[name="twitter:title"]')) ||
+      cleanTitle(doc.title);
+  }
 
   function fromHeuristics(doc, loc) {
     if (!loc || !PRODUCT_PATH.test(loc.pathname || "")) return null;
-    var h1 = doc.querySelector("h1");
-    var title = h1 && h1.textContent ? h1.textContent.trim().replace(/\s+/g, " ") : null;
-    if (!title || title.length < 3) return null;
-    var body = doc.body ? doc.body.textContent || "" : "";
-    var priceMatch = body.match(/[$€£]\s?\d[\d.,]*/);
-    var img = doc.querySelector('main img, [class*="product" i] img, img');
+    var title = bestGuessTitle(doc);
+    if (!title) return null;
     return {
       method: "heuristic",
       title: title,
-      price: priceMatch ? CF.parsePrice(priceMatch[0]) : null,
-      image: img ? img.currentSrc || img.src : null,
+      price: guessPrice(doc),
+      image: guessImage(doc),
       brand: null, sku: null, gtin: null
     };
   }
@@ -249,6 +295,14 @@
     try { return new URL(url, loc && loc.href ? loc.href : undefined).href; } catch (e) { return url; }
   }
 
+  function finalize(p, loc) {
+    p.found = true;
+    p.title = p.title.replace(/\s+/g, " ").trim().slice(0, 300);
+    p.image = absolutize(p.image, loc);
+    p.url = loc && loc.href ? loc.href : null;
+    return p;
+  }
+
   CF.extractProduct = function (doc, loc) {
     var p = null;
     try { p = fromJsonLd(doc); } catch (e) {}
@@ -256,11 +310,22 @@
     if (!p) { try { p = fromMicrodata(doc); } catch (e) {} }
     if (!p) { try { p = fromHeuristics(doc, loc); } catch (e) {} }
     if (!p) return { found: false };
-    p.found = true;
-    p.title = p.title.replace(/\s+/g, " ").trim().slice(0, 300);
-    p.image = absolutize(p.image, loc);
-    p.url = loc && loc.href ? loc.href : null;
-    return p;
+    return finalize(p, loc);
+  };
+
+  /* For explicit invocations (the bookmarklet): the user asked, so always
+   * produce a best guess rather than giving up — any title will do, with a
+   * "fallback" method so the UI can flag lower confidence. */
+  CF.extractProductLoose = function (doc, loc) {
+    var p = CF.extractProduct(doc, loc);
+    if (p.found) return p;
+    var title = null;
+    try { title = bestGuessTitle(doc); } catch (e) {}
+    if (!title) return { found: false };
+    var guess = { method: "fallback", title: title, brand: null, sku: null, gtin: null, price: null, image: null };
+    try { guess.price = guessPrice(doc); } catch (e) {}
+    try { guess.image = guessImage(doc); } catch (e) {}
+    return finalize(guess, loc);
   };
 })();
 
@@ -589,7 +654,9 @@
     var pText = el("div");
     pText.appendChild(el("div", "t", opts.product.title));
     var pagePrice = fmtPrice(opts.product.price);
-    pText.appendChild(el("div", "p", pagePrice ? "This page: " + pagePrice : "Price on page not detected"));
+    var sub = pagePrice ? "This page: " + pagePrice : "Price on page not detected";
+    if (opts.product.method === "fallback") sub += " · best guess, check the title";
+    pText.appendChild(el("div", "p", sub));
     prod.appendChild(pText);
     panel.appendChild(prod);
 
@@ -723,9 +790,12 @@
   var existing = document.querySelector("[data-cheapfinder]");
   if (existing) { existing.remove(); return; }
 
-  var product = CF.extractProduct(document, location);
+  // Loose extraction: the user tapped the bookmark on purpose, so always
+  // show the panel with a best guess instead of giving up (heavy SPAs like
+  // Shein expose no structured product data).
+  var product = CF.extractProductLoose(document, location);
   if (!product.found) {
-    alert("CheapFinder: no product detected on this page.");
+    alert("CheapFinder: couldn't find anything that looks like a product here.");
     return;
   }
 

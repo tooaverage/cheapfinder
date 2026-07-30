@@ -33,6 +33,26 @@ test("microdata extraction", () => {
   assert.equal(p.price.currency, "USD");
 });
 
+test("SPA shop with no structured data: heuristic path via -p- URL", () => {
+  const { CF, document, window } = loadCF(fixture("spa-shop.html"), "https://m.shein.example/Frenchy-Pants-p-12345678.html");
+  const p = CF.extractProduct(document, window.location);
+  assert.equal(p.found, true);
+  assert.equal(p.method, "heuristic");
+  assert.equal(p.title, "Frenchy Solid Linen Wide Leg Pants");
+  assert.equal(p.price.amount, 18.49);
+  assert.equal(p.image, "https://img.example-cdn.com/images/pants-main.jpg"); // largest, not the icon
+});
+
+test("loose extraction always produces a best guess for explicit invocations", () => {
+  const { CF, document, window } = loadCF(fixture("spa-shop.html"), "https://m.shein.example/weird/url/shape");
+  assert.equal(CF.extractProduct(document, window.location).found, false, "strict mode stays conservative");
+  const p = CF.extractProductLoose(document, window.location);
+  assert.equal(p.found, true);
+  assert.equal(p.method, "fallback");
+  assert.equal(p.title, "Frenchy Solid Linen Wide Leg Pants");
+  assert.equal(p.price.amount, 18.49);
+});
+
 test("non-product page yields found:false", () => {
   const { CF, document, window } = loadCF(fixture("no-product.html"), "https://blog.example/posts/typography");
   const p = CF.extractProduct(document, window.location);

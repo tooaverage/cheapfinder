@@ -147,6 +147,19 @@ try {
   await page3.evaluate(bundle);
   const toggled = await page3.evaluate(() => !document.querySelector("[data-cheapfinder]"));
   check("second bookmarklet run dismisses panel", toggled);
+
+  // SPA-style shop with zero structured data (the Shein case): the
+  // bookmarklet must still mount via loose extraction.
+  const page4 = await plain.newPage();
+  await page4.goto(`${base}/spa-shop.html`, { waitUntil: "domcontentloaded" });
+  await page4.evaluate(() => { window.__CF_TEST_OPEN_SHADOW = true; });
+  await page4.evaluate(bundle).catch((e) => console.log("# spa bundle eval error:", String(e).slice(0, 400)));
+  const spaText = await page4.evaluate(() => {
+    const h = document.querySelector("[data-cheapfinder]");
+    return h && h.shadowRoot ? h.shadowRoot.textContent : null;
+  });
+  check("bookmarklet handles SPA shop without structured data", /Frenchy Solid Linen/.test(spaText || ""), spaText || "null");
+  check("SPA shop price detected from price-classed element", /\$18\.49/.test(spaText || ""));
 } finally {
   if (plain) await plain.close().catch(() => {});
   await context.close();

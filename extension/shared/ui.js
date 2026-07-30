@@ -122,7 +122,9 @@
     var pText = el("div");
     pText.appendChild(el("div", "t", opts.product.title));
     var pagePrice = fmtPrice(opts.product.price);
-    pText.appendChild(el("div", "p", pagePrice ? "This page: " + pagePrice : "Price on page not detected"));
+    var sub = pagePrice ? "This page: " + pagePrice : "Price on page not detected";
+    if (opts.product.method === "fallback") sub += " · best guess, check the title";
+    pText.appendChild(el("div", "p", sub));
     prod.appendChild(pText);
     panel.appendChild(prod);
 
